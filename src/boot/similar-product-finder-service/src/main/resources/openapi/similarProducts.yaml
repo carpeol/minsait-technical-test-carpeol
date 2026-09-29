@@ -1,0 +1,108 @@
+openapi: 3.0.0
+info:
+  title: SimilarProducts
+  version: '1.0'
+servers:
+  - url: 'http://localhost:5000'
+paths:
+  '/product/{productId}/similar':
+    parameters:
+      - schema:
+          type: string
+        name: productId
+        in: path
+        required: true
+    get:
+      operationId: get-product-similar
+      summary: Similar products
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                 $ref: '#/components/schemas/SimilarProducts'
+        '404':
+          description: Requested product not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '400':
+          description: Invalid product ID
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '502':
+          description: Bad gateway
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '503':
+          description: Product service unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '504':
+          description: Product service timeout
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '500':
+          description: Unexpected internal error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+components:
+  schemas:
+    ProblemDetail:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+      required:
+        - title
+        - status
+        - detail
+    SimilarProducts:
+      type: array
+      description: 'List of similar products to a given one ordered by similarity'
+      minItems: 0
+      uniqueItems: true
+      items:
+        $ref: '#/components/schemas/ProductDetail'
+    ProductDetail:
+      description: 'Product detail'
+      type: object
+      properties:
+        id:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        price:
+          type: number
+        availability:
+          type: boolean
+      required:
+        - id
+        - name
+        - price
+        - availability

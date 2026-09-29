@@ -1,0 +1,7 @@
+.git
+.github
+.idea
+.run
+**/target
+shared/grafana
+solution.md

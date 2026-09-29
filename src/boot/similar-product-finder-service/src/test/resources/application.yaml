@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: similar-product-finder
+  threads:
+    virtual:
+      enabled: true
+
+similar-products:
+  api:
+    base-url: http://localhost:3001
+    connect-timeout: 1s
+    read-timeout: 3s
+  cache:
+    enabled: true
+    ttl: 5m
+    not-found-ttl: 1m
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      product-api:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-duration-threshold: 2s
+        slow-call-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+
+server:
+  port: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    disable-swagger-default-url: true
