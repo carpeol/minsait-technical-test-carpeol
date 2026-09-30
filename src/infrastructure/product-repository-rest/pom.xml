@@ -75,6 +75,7 @@
                             <inputSpec>${project.basedir}/src/main/resources/openapi/existingApis.yaml</inputSpec>
                             <generatorName>spring</generatorName>
                             <library>spring-http-interface</library>
+                            <addCompileSourceRoot>false</addCompileSourceRoot>
                             <apiPackage>com.carpeol.similar.product.finder.infrastructure.product.repository.rest.generated.api</apiPackage>
                             <modelPackage>com.carpeol.similar.product.finder.infrastructure.product.repository.rest.generated.model</modelPackage>
                             <generateSupportingFiles>false</generateSupportingFiles>
@@ -84,6 +85,25 @@
                                 <interfaceOnly>true</interfaceOnly>
                                 <useSpringBoot3>true</useSpringBoot3>
                             </configOptions>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>add-openapi-generated-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.build.directory}/generated-sources/openapi/src/main/java</source>
+                            </sources>
                         </configuration>
                     </execution>
                 </executions>
