@@ -9,6 +9,8 @@ import com.carpeol.similar.product.finder.domain.valueobject.ProductId;
 import com.carpeol.similar.product.finder.domain.valueobject.ProductName;
 import com.carpeol.similar.product.finder.domain.valueobject.ProductPrice;
 import com.carpeol.similar.product.finder.infrastructure.product.repository.rest.generated.model.ProductDetail;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
@@ -21,11 +23,7 @@ import java.net.http.HttpTimeoutException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 public class ProductRepositoryRestAdapter implements ProductRepository {
 
@@ -50,6 +48,9 @@ public class ProductRepositoryRestAdapter implements ProductRepository {
         } catch (InvalidProductField | NumberFormatException exception) {
             LOGGER.error("Product API returned invalid details for productId={}", productId.value(), exception);
             throw new ProductRepositoryError("Invalid product details returned for ID: " + productId.value(), exception);
+        } catch (CallNotPermittedException | BulkheadFullException exception) {
+            LOGGER.error("Resilience {} error for productId{}: {}", exception.getClass().getSimpleName(), productId.value(), exception.getMessage());
+            throw new ProductRepositoryError("Resilience error retrieving product details for ID: " + productId.value(), exception);
         } catch (RestClientException exception) {
             logRestClientFailure("Product details request failed", productId, exception);
             throw new ProductRepositoryError("Error retrieving product details for ID: " + productId.value(), exception);
@@ -91,6 +92,9 @@ public class ProductRepositoryRestAdapter implements ProductRepository {
             LOGGER.error("Product API returned invalid similar product IDs for productId={}", productId.value(), exception);
             throw new ProductRepositoryError(
                     "Invalid similar product IDs returned for ID: " + productId.value(), exception);
+        } catch (CallNotPermittedException | BulkheadFullException exception) {
+            LOGGER.error("Resilience {} error for retrieving similar products for productId={}: {}", exception.getClass().getSimpleName(), productId.value(), exception.getMessage());
+            throw new ProductRepositoryError("Resilience error retrieving product details for ID: " + productId.value(), exception);
         } catch (RestClientException exception) {
             logRestClientFailure("Similar product IDs request failed", productId, exception);
             throw new ProductRepositoryError("Error retrieving similar product IDs for ID: " + productId.value(), exception);
@@ -109,6 +113,9 @@ public class ProductRepositoryRestAdapter implements ProductRepository {
 
             requireSuccessfulStatus(response, "checking existence", productId);
             return true;
+        } catch (CallNotPermittedException | BulkheadFullException exception) {
+            LOGGER.error("Resilience {} error checking existence of productId={}: {}", exception.getClass().getSimpleName(), productId.value(), exception.getMessage());
+            throw new ProductRepositoryError("Resilience error retrieving product details for ID: " + productId.value(), exception);
         } catch (RestClientException exception) {
             logRestClientFailure("Product existence check failed", productId, exception);
             throw new ProductRepositoryError("Error checking existence for product ID: " + productId.value(), exception);

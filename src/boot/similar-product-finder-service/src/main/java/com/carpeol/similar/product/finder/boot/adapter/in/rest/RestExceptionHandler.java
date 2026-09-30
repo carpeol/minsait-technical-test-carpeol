@@ -4,6 +4,7 @@ import com.carpeol.similar.product.finder.domain.exception.InvalidProductField;
 import com.carpeol.similar.product.finder.domain.exception.ProductNotFound;
 import com.carpeol.similar.product.finder.domain.exception.ProductRepositoryError;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -44,23 +45,17 @@ public class RestExceptionHandler {
             case BAD_GATEWAY -> "The product service returned an invalid response.";
             case SERVICE_UNAVAILABLE -> "The product service is temporarily unavailable.";
             case GATEWAY_TIMEOUT -> "The product service did not respond before the deadline.";
+            case TOO_MANY_REQUESTS -> "The product service is currently overloaded. Please try again later.";
             default -> "The product service request failed.";
         };
         if (status == HttpStatus.GATEWAY_TIMEOUT) {
             LOGGER.warn("Product repository request timed out: {}", exception.getMessage());
+        } else if (status == HttpStatus.TOO_MANY_REQUESTS || hasCause(exception, CallNotPermittedException.class)) {
+            LOGGER.warn("Product repository request rejected by resilience limits: {}", exception.getMessage());
         } else {
             LOGGER.error("Product repository request failed with status {}", status.value(), exception);
         }
         return problem(status, status.getReasonPhrase(), detail);
-    }
-
-    @ExceptionHandler(CallNotPermittedException.class)
-    ResponseEntity<ProblemDetail> handleOpenCircuitBreaker(CallNotPermittedException exception) {
-        LOGGER.warn("Rejecting product API request because its circuit breaker is open");
-        return problem(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(),
-                "The product service is temporarily unavailable.");
     }
 
     @ExceptionHandler(Exception.class)
@@ -78,6 +73,14 @@ public class RestExceptionHandler {
                 || hasCause(exception, TimeoutException.class)) {
             return HttpStatus.GATEWAY_TIMEOUT;
         }
+
+        if (hasCause(exception, CallNotPermittedException.class)) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
+        }
+        if (hasCause(exception, BulkheadFullException.class)) {
+            return HttpStatus.TOO_MANY_REQUESTS;
+        }
+
         if (hasCause(exception, ResourceAccessException.class)) {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
