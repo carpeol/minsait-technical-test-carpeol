@@ -20,7 +20,7 @@ resilience4j:
     instances:
       product-api:
         max-concurrent-calls: ${RESILIENCE4J_BULKHEAD_PRODUCT_API_MAX_CONCURRENT:150}
-        max-wait-duration: ${RESILIENCE4J_BULKHEAD_PRODUCT_API_MAX_WAIT:5ms}
+        max-wait-duration: ${RESILIENCE4J_BULKHEAD_PRODUCT_API_MAX_WAIT:200ms}
   circuitbreaker:
     instances:
       product-api:
@@ -35,6 +35,7 @@ resilience4j:
         ignore-exceptions:
           - java.net.http.HttpTimeoutException
           - java.net.SocketTimeoutException
+          - io.github.resilience4j.bulkhead.BulkheadFullException
 
 server:
   port: ${SERVER_PORT:5000}
