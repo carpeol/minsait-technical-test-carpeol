@@ -16,6 +16,7 @@ import org.springframework.web.client.support.RestClientAdapter;
 import org.springframework.web.service.invoker.HttpServiceProxyFactory;
 
 import java.net.http.HttpClient;
+import java.util.concurrent.Executors;
 
 @Configuration(proxyBeanMethods = false)
 @EnableCaching
@@ -26,6 +27,7 @@ public class ProductRepositoryRestConfiguration {
     DefaultApi productApi(ProductRepositoryRestProperties properties) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(properties.connectTimeout())
+                .executor(Executors.newVirtualThreadPerTaskExecutor())
                 .build();
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(properties.readTimeout());

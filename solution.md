@@ -38,13 +38,13 @@ The application listens on `http://localhost:5000`. Its upstream endpoint defaul
 
 ### Upstream client and cache properties
 
-The REST client uses configurable connection and response timeouts. The defaults are 5 seconds to establish the connection and 10 seconds to receive a response. Similar-product IDs are cached with Caffeine through Spring's `@Cacheable` abstraction; the cache can be disabled without changing the adapter behavior.
+The REST client uses configurable connection and response timeouts. The defaults are 2 seconds to establish the connection and 6 seconds to receive a response. This allows an upstream response that takes about 5 seconds while preventing a stalled response from holding the request for tens of seconds. Similar-product IDs are cached with Caffeine through Spring's `@Cacheable` abstraction; the cache can be disabled without changing the adapter behavior.
 
 | Property | Environment variable | Default                 |
 | --- | --- |-------------------------|
 | `similar-products.api.base-url` | `SIMILAR_PRODUCTS_API_BASE_URL` | `http://localhost:3001` |
-| `similar-products.api.connect-timeout` | `SIMILAR_PRODUCTS_API_CONNECT_TIMEOUT` | `5s`                    |
-| `similar-products.api.read-timeout` | `SIMILAR_PRODUCTS_API_READ_TIMEOUT` | `10s`                   |
+| `similar-products.api.connect-timeout` | `SIMILAR_PRODUCTS_API_CONNECT_TIMEOUT` | `2s`                    |
+| `similar-products.api.read-timeout` | `SIMILAR_PRODUCTS_API_READ_TIMEOUT` | `6s`                    |
 | `similar-products.cache.enabled` | `SIMILAR_PRODUCTS_CACHE_ENABLED` | `true`                  |
 | `similar-products.cache.ttl` | `SIMILAR_PRODUCTS_CACHE_TTL` | `5m`                    |
 | `similar-products.cache.not-found-ttl` | `SIMILAR_PRODUCTS_CACHE_NOT_FOUND_TTL` | `1m`                    |
@@ -55,7 +55,14 @@ The similar-product ID cache stores successful ID lists for the configured TTL. 
 
 The outbound product API is protected by a Resilience4j circuit breaker shared by product-detail, existence, and similar-ID calls. `ProductApiGateway` is a separate Spring bean with `@CircuitBreaker` on each upstream operation, so adapter calls pass through Spring's resilience proxy, including detail lookups made on virtual threads. The infrastructure module includes Spring Boot's AspectJ starter to enable the annotation-based AOP interception. Product-detail `404` responses are converted to normal gateway responses before the annotated method returns, so expected missing products do not count as breaker failures.
 
-With the defaults below, the breaker evaluates a count-based window of 20 calls after at least 10 calls; it opens when at least 50% fail or at least 50% are slower than 2 seconds. While open, calls fail fast and return `503`. After 10 seconds it permits 3 probe calls in the half-open state; successful probes close the breaker and failures reopen it.
+The same operations also use a Resilience4j semaphore bulkhead. It limits active outbound product API calls to 150 per application instance; when all permits are occupied, a call waits for at most 5 milliseconds to acquire one. If it still cannot acquire a permit, the request returns `429 Too Many Requests`. This short wait limits queueing under saturation; it does not limit the duration of an outbound call.
+
+With the defaults below, the breaker evaluates a count-based window of 20 calls after at least 10 calls; it opens when at least 50% fail or at least 50% are slower than 6 seconds. Responses around 5 seconds are below the slow-call threshold. While open, calls fail fast and return `503`. After 10 seconds it permits 3 probe calls in the half-open state; successful probes close the breaker and failures reopen it.
+
+| Property | Environment variable | Default |
+| --- | --- | --- |
+| `resilience4j.bulkhead.instances.product-api.max-concurrent-calls` | `RESILIENCE4J_BULKHEAD_PRODUCT_API_MAX_CONCURRENT` | `150` |
+| `resilience4j.bulkhead.instances.product-api.max-wait-duration` | `RESILIENCE4J_BULKHEAD_PRODUCT_API_MAX_WAIT` | `5ms` |
 
 | Property | Environment variable | Default |
 | --- | --- | --- |
@@ -63,14 +70,16 @@ With the defaults below, the breaker evaluates a count-based window of 20 calls 
 | `resilience4j.circuitbreaker.instances.product-api.sliding-window-size` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLIDING_WINDOW_SIZE` | `20` |
 | `resilience4j.circuitbreaker.instances.product-api.minimum-number-of-calls` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_MINIMUM_NUMBER_OF_CALLS` | `10` |
 | `resilience4j.circuitbreaker.instances.product-api.failure-rate-threshold` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_FAILURE_RATE_THRESHOLD` | `50` (%) |
-| `resilience4j.circuitbreaker.instances.product-api.slow-call-duration-threshold` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLOW_CALL_DURATION_THRESHOLD` | `2s` |
+| `resilience4j.circuitbreaker.instances.product-api.slow-call-duration-threshold` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLOW_CALL_DURATION_THRESHOLD` | `6s` |
 | `resilience4j.circuitbreaker.instances.product-api.slow-call-rate-threshold` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLOW_CALL_RATE_THRESHOLD` | `50` (%) |
 | `resilience4j.circuitbreaker.instances.product-api.wait-duration-in-open-state` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_WAIT_DURATION_IN_OPEN_STATE` | `10s` |
 | `resilience4j.circuitbreaker.instances.product-api.permitted-number-of-calls-in-half-open-state` | `RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_PERMITTED_NUMBER_OF_CALLS_IN_HALF_OPEN_STATE` | `3` |
 
 These thresholds are initial operating defaults, not universal capacity targets. Tune them from scenario-specific load-test results and upstream latency/error objectives. The breaker does not retry requests or make a slow upstream call faster; it limits repeated calls while the dependency is failing or slow. The existing connect/read timeouts still bound individual outbound calls.
 
-The REST exception handler returns a `404` Problem Detail for a missing requested product, returns `400` for malformed IDs, and uses RFC 9457 Problem Details for other failures: `502` for invalid/upstream error responses, `503` for an unavailable upstream or open circuit, and `504` for upstream timeouts. Missing details for individual similar products continue to be omitted from the successful `200` response. Unexpected application failures return a generic `500` Problem Detail without exposing internal exception text.
+The 6-second response timeout lets an upstream response taking about 5 seconds complete, but a response taking 50 seconds will time out at about 6 seconds and return `504 Gateway Timeout` instead of being awaited for 50 seconds. The circuit breaker has a 6-second slow-call threshold, so a 5-second response is below that threshold; its configured ignore list includes `HttpTimeoutException` and `SocketTimeoutException`. The bulkhead's 5-millisecond wait applies only when all concurrency permits are occupied and limits admission delay; it is separate from the response timeout. The concurrency limit is per application instance, so total capacity grows with the number of instances.
+
+The REST exception handler returns a `404` Problem Detail for a missing requested product, returns `400` for malformed IDs, and uses RFC 9457 Problem Details for other failures: `429` when the bulkhead is saturated, `502` for invalid/upstream error responses, `503` for an unavailable upstream or open circuit, and `504` for upstream timeouts. Missing details for individual similar products continue to be omitted from the successful `200` response. Unexpected application failures return a generic `500` Problem Detail without exposing internal exception text.
 
 Useful endpoints:
 
@@ -108,7 +117,7 @@ mvn clean install
 
 The requested product is checked first; if it does not exist, the endpoint returns `404` and does not request similar IDs. Missing details for a similar-product ID are different: the REST repository adapter logs a warning, omits that product from the result, and continues returning the other available products with `200`.
 
-The application service requests all similar product details through the `ProductRepository` port. The REST adapter resolves those details concurrently using virtual threads, then returns the found products in the original similarity order. This keeps transport-level concurrency in the infrastructure adapter and leaves the use case responsible for application orchestration and response mapping.
+The application service requests all similar product details through the `ProductRepository` port. The REST adapter resolves those details concurrently using virtual threads, then returns the found products in the original similarity order. The shared Resilience4j bulkhead limits active calls to the upstream API. This keeps transport-level concurrency in the infrastructure adapter and leaves the use case responsible for application orchestration and response mapping.
 
 ## Performance self-evaluation
 

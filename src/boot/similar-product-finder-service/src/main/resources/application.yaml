@@ -8,14 +8,19 @@ spring:
 similar-products:
   api:
     base-url: ${SIMILAR_PRODUCTS_API_BASE_URL:http://localhost:3001}
-    connect-timeout: ${SIMILAR_PRODUCTS_API_CONNECT_TIMEOUT:3s}
-    read-timeout: ${SIMILAR_PRODUCTS_API_READ_TIMEOUT:7s}
+    connect-timeout: ${SIMILAR_PRODUCTS_API_CONNECT_TIMEOUT:2s}
+    read-timeout: ${SIMILAR_PRODUCTS_API_READ_TIMEOUT:6s}
   cache:
     enabled: ${SIMILAR_PRODUCTS_CACHE_ENABLED:true}
     ttl: ${SIMILAR_PRODUCTS_CACHE_TTL:5m}
     not-found-ttl: ${SIMILAR_PRODUCTS_CACHE_NOT_FOUND_TTL:1m}
 
 resilience4j:
+  bulkhead:
+    instances:
+      product-api:
+        max-concurrent-calls: ${RESILIENCE4J_BULKHEAD_PRODUCT_API_MAX_CONCURRENT:150}
+        max-wait-duration: ${RESILIENCE4J_BULKHEAD_PRODUCT_API_MAX_WAIT:200ms}
   circuitbreaker:
     instances:
       product-api:
@@ -23,10 +28,14 @@ resilience4j:
         sliding-window-size: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLIDING_WINDOW_SIZE:20}
         minimum-number-of-calls: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_MINIMUM_NUMBER_OF_CALLS:10}
         failure-rate-threshold: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_FAILURE_RATE_THRESHOLD:50}
-        slow-call-duration-threshold: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLOW_CALL_DURATION_THRESHOLD:2s}
+        slow-call-duration-threshold: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLOW_CALL_DURATION_THRESHOLD:6s}
         slow-call-rate-threshold: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_SLOW_CALL_RATE_THRESHOLD:50}
         wait-duration-in-open-state: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_WAIT_DURATION_IN_OPEN_STATE:10s}
         permitted-number-of-calls-in-half-open-state: ${RESILIENCE4J_CIRCUITBREAKER_INSTANCES_PRODUCT_API_PERMITTED_NUMBER_OF_CALLS_IN_HALF_OPEN_STATE:3}
+        ignore-exceptions:
+          - java.net.http.HttpTimeoutException
+          - java.net.SocketTimeoutException
+          - io.github.resilience4j.bulkhead.BulkheadFullException
 
 server:
   port: ${SERVER_PORT:5000}
